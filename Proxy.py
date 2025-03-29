@@ -118,8 +118,15 @@ while True:
     # ProxyServer finds a cache hit
     # Send back response to client 
     # ~~~~ INSERT CODE ~~~~
-    for line in cacheData:
-      clientSocket.send(line.encode())
+    # print(f'cacheData: {cacheData}')
+    # for line in cacheData:
+    #   clientSocket.send(line.encode('utf-8', errors='ignore'))
+    
+    # I tried to use the rewrite the cacheData because its a list but the next few lines want to print ('> ' + cacheData), that causes an error and would go to exception
+    with open(cacheLocation, "r", encoding='utf-8', errors='ignore') as safeRead:
+      cacheData = safeRead.read()
+
+    clientSocket.sendall(cacheData.encode('utf-8'))
     # ~~~~ END CODE INSERT ~~~~
     cacheFile.close()
     print ('Sent to the client:')
@@ -172,12 +179,7 @@ while True:
 
       # Get the response from the origin server
       # ~~~~ INSERT CODE ~~~~
-      response = b''
-      while True:
-          data = originServerSocket.recv(BUFFER_SIZE)
-          if not data:
-              break
-          response += data
+      response = originServerSocket.recv(BUFFER_SIZE)
       # ~~~~ END CODE INSERT ~~~~
 
       # Send the response to the client
