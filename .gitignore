@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# venv
+venv/
+env/
+ENV/
+.venv/
+
+# log
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# backup
+*~
+
+# test output
+*.out
+*.tmp
