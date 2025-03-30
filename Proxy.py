@@ -111,8 +111,9 @@ while True:
     fileExists = os.path.isfile(cacheLocation)
     
     # Check wether the file is currently in the cache
-    cacheFile = open(cacheLocation, "r")
-    cacheData = cacheFile.readlines()
+    print(f'Reading cacheFile')
+    cacheFile = open(cacheLocation, "rb")
+    # cacheData = cacheFile.readlines()
 
     print ('Cache hit! Loading from cache file: ' + cacheLocation)
     # ProxyServer finds a cache hit
@@ -123,14 +124,15 @@ while True:
     #   clientSocket.send(line.encode('utf-8', errors='ignore'))
     
     # I tried to use the rewrite the cacheData because its a list but the next few lines want to print ('> ' + cacheData), that causes an error and would go to exception
-    with open(cacheLocation, "r", encoding='utf-8', errors='ignore') as safeRead:
-      cacheData = safeRead.read()
-
-    clientSocket.sendall(cacheData.encode('utf-8'))
+    print(f'Reading cacheData')
+    cacheData = cacheFile.read()
+    print(f'Finish reading cacheData')
+    clientSocket.sendall(cacheData)
     # ~~~~ END CODE INSERT ~~~~
     cacheFile.close()
     print ('Sent to the client:')
-    print ('> ' + cacheData)
+    # print ('> ' + cacheData)
+    print(f'> [binary data, {len(cacheData)} bytes]')
   except:
     # cache miss.  Get resource from origin server
     originServerSocket = None
