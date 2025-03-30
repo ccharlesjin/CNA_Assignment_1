@@ -4,6 +4,68 @@ import sys
 import os
 import argparse
 import re
+import datetime
+
+def handle_redirect_if_needed(response_data, depth=0):
+    """Handle HTTP 301/302 redirection, recursively (max depth = 5)"""
+    if depth > 5:
+        print("Too many redirects")
+        return response_data
+
+    header_str = response_data.decode('utf-8', errors='ignore')
+    status_line = header_str.split('\r\n')[0]
+
+    if '301' in status_line or '302' in status_line:
+        location = extract_header_field(header_str, 'Location')
+        if location:
+            print(f'Redirect detected → {location}')
+            location = re.sub('^http(s?)://', '', location)
+            host_and_path = location.split('/', 1)
+            new_host = host_and_path[0]
+            new_path = '/' + host_and_path[1] if len(host_and_path) > 1 else '/'
+
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((socket.gethostbyname(new_host), 80))
+                req_line = f'GET {new_path} HTTP/1.1\r\nHost: {new_host}\r\nConnection: close\r\n\r\n'
+                s.sendall(req_line.encode())
+
+                redirected_response = b''
+                while True:
+                    chunk = s.recv(BUFFER_SIZE)
+                    if not chunk:
+                        break
+                    redirected_response += chunk
+                s.close()
+
+                return handle_redirect_if_needed(redirected_response, depth + 1)
+            except Exception as e:
+                print(f"Redirect failed: {e}")
+                return response_data
+        else:
+            print("Redirect response but no Location header.")
+            return response_data
+    else:
+        return response_data
+
+def extract_header_field(header_str, field_name):
+    """extract header field from HTTP response"""
+    pattern = re.compile(rf'(?i){field_name}:\s*(.*)')
+    match = pattern.search(header_str)
+    return match.group(1).strip() if match else None
+
+def is_cache_expired(meta_path):
+    """check whether cached file has expired"""
+    if not os.path.exists(meta_path):
+        return True
+    with open(meta_path, "r") as meta_file:
+        lines = meta_file.readlines()
+        if len(lines) < 2:
+            return True
+        cache_time = float(lines[0].strip())
+        max_age = int(lines[1].strip())
+        now = datetime.datetime.now().timestamp()
+        return (now - cache_time) > max_age
 
 # 1MB buffer size
 BUFFER_SIZE = 1000000
@@ -107,7 +169,9 @@ while True:
         cacheLocation = cacheLocation + 'default'
 
     print ('Cache location:\t\t' + cacheLocation)
-
+    metaLocation = cacheLocation + '.meta'
+    if not os.path.isfile(cacheLocation) or is_cache_expired(metaLocation):
+      raise Exception("Cache miss or expired")
     fileExists = os.path.isfile(cacheLocation)
     
     # Check wether the file is currently in the cache
@@ -160,7 +224,8 @@ while True:
       # originServerRequestHeader is the second line in the request
       # ~~~~ INSERT CODE ~~~~
       originServerRequest = method + ' ' + resource + ' ' + version
-      originServerRequestHeader = 'Host:' + hostname
+      originServerRequestHeader = 'Host: ' + hostname + '\r\nConnection: close'
+      # originServerRequestHeader = 'Host:' + hostname
       # ~~~~ END CODE INSERT ~~~~
 
       # Construct the request to send to the origin server
@@ -181,7 +246,17 @@ while True:
 
       # Get the response from the origin server
       # ~~~~ INSERT CODE ~~~~
-      response = originServerSocket.recv(BUFFER_SIZE)
+      # response = originServerSocket.recv(BUFFER_SIZE)
+      response = b''
+      while True:
+          chunk = originServerSocket.recv(BUFFER_SIZE)
+          if not chunk:
+              break
+          response += chunk
+
+      # handle redirects
+      response = handle_redirect_if_needed(response)
+
       # ~~~~ END CODE INSERT ~~~~
 
       # Send the response to the client
@@ -199,6 +274,18 @@ while True:
       # Save origin server response in the cache file
       # ~~~~ INSERT CODE ~~~~
       cacheFile.write(response)
+      # try to extract max-age from header and write to meta file
+      try:
+          header_str = response.decode('utf-8', errors='ignore')
+          max_age_str = extract_header_field(header_str, 'Cache-Control')
+          max_age = 0
+          if max_age_str and 'max-age=' in max_age_str:
+              max_age = int(max_age_str.split('max-age=')[1].split(',')[0].strip())
+          with open(cacheLocation + '.meta', 'w') as metaFile:
+              metaFile.write(str(datetime.datetime.now().timestamp()) + '\n')
+              metaFile.write(str(max_age))
+      except Exception as e:
+          print(f"Failed to write cache meta: {e}")
       # ~~~~ END CODE INSERT ~~~~
       cacheFile.close()
       print ('cache file closed')
