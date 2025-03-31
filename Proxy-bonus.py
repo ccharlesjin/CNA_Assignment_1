@@ -6,6 +6,26 @@ import argparse
 import re
 import datetime
 
+"""
+Proxy-bonus.py
+
+Finished Bonus Question 1 Check expires
+
+Description:
+------------
+- When receiving a response from the origin server, the proxy checks for the `Expires` header.
+- If the `Expires` header is present and valid, the expiry time is saved in a `.meta` file along with the current timestamp.
+- When requests, the proxy compares the current time with the Expires timestamp to decide whether the cached content is still valid.
+- If expired or invalid, the proxy fetches a fresh copy from the origin server and updates the cache.
+
+Relevant functions modified or added:
+-------------------------------------
+- `f(header_str, field_name)`: Extracts the header field value. (line 70)
+- `is_cache_expired(meta_path)`: Determines if a cached object has expired. (line 76)
+- Cache saving logic in the main proxy flow now stores Expires time if available. 
+- Cache loading logic checks Expires time before serving the cached object.
+"""
+
 def handle_redirect_if_needed(response_data, depth=0):
     """Handle HTTP 301/302 redirection, recursively (max depth = 5)"""
     if depth > 5:
@@ -58,14 +78,38 @@ def is_cache_expired(meta_path):
     """check whether cached file has expired"""
     if not os.path.exists(meta_path):
         return True
-    with open(meta_path, "r") as meta_file:
-        lines = meta_file.readlines()
-        if len(lines) < 2:
-            return True
-        cache_time = float(lines[0].strip())
-        max_age = int(lines[1].strip())
-        now = datetime.datetime.now().timestamp()
-        return (now - cache_time) > max_age
+    try:
+        with open(meta_path, "r") as meta_file:
+            lines = meta_file.readlines()
+            if len(lines) < 3:
+                return True
+            
+            cache_time = float(lines[0].strip())
+            max_age = int(lines[1].strip())
+            expires_at = float(lines[2].strip())  # expires_at is the time when the cache expires
+            
+            now = datetime.datetime.now().timestamp()
+
+            # check if the cache has expired
+            if expires_at != -1:
+                if now > expires_at:
+                    print(f"Cache expired at ({expires_at}), now: {now}")
+                    return True
+                else:
+                    print(f"Cache dosen't expire")
+                    return False
+            else:
+                # check max-age
+                if (now - cache_time) > max_age:
+                    print(f"Cache max-age: {now - cache_time:.2f}s > {max_age}s")
+                    return True
+                else:
+                    print(f"Cache max-age: {now - cache_time:.2f}s <= {max_age}s")
+                    return False
+    
+    except Exception as e:
+        print(f"Cache error: {e}")
+        return True
 
 # 1MB buffer size
 BUFFER_SIZE = 1000000
@@ -281,9 +325,21 @@ while True:
           max_age = 0
           if max_age_str and 'max-age=' in max_age_str:
               max_age = int(max_age_str.split('max-age=')[1].split(',')[0].strip())
+          
+          # extract expires timestamp
+          expires_ts = -1
+          expires_str = extract_header_field(header_str, 'Expires')
+          if expires_str:
+            try:
+              expires_ts = datetime.datetime.strptime(expires_str, "%a, %d %b %Y %H:%M:%S GMT").timestamp()
+            except Exception as e:
+              print(f"Error while extracting expires_ts: {e}")
+              expires_ts = -1    
+        
           with open(cacheLocation + '.meta', 'w') as metaFile:
               metaFile.write(str(datetime.datetime.now().timestamp()) + '\n')
-              metaFile.write(str(max_age))
+              metaFile.write(str(max_age) + '\n') 
+              metaFile.write(str(expires_ts if expires_ts else -1))
       except Exception as e:
           print(f"Failed to write cache meta: {e}")
       # ~~~~ END CODE INSERT ~~~~
